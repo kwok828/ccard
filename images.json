@@ -2,5 +2,10 @@
     {
         "src":"https://color-card-display.oss-cn-beijing.aliyuncs.com/one.png",
         "caption":"第一张图片"
+    },
+    {
+        "src":"https://color-card-display.oss-cn-beijing.aliyuncs.com/two.jpg",
+        "caption":"第一张图片"
     }
+
 ]
