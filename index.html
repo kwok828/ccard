@@ -20,7 +20,45 @@
     .layer{position:absolute;inset:0;display:grid;place-items:center;opacity:0;transition:opacity .38s ease}
     .layer.show{opacity:1}
 
-    img.viewer{max-width:100%;max-height:100%;object-fit:contain;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+    img.viewer{max-width:100%;max-height:100%;object-fit:contain;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.35);
+      transform-origin: center center; transition: transform 0.2s ease;}
+    
+    .zoom-controls {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      z-index: 10;
+    }
+    
+    .zoom-btn {
+      pointer-events: auto;
+      appearance: none;
+      border: 0;
+      background: rgba(0,0,0,.35);
+      color: #fff;
+      width: 36px;
+      height: 36px;
+      border-radius: 999px;
+      display: grid;
+      place-items: center;
+      cursor: pointer;
+      backdrop-filter: saturate(120%) blur(4px);
+      transition: transform .15s ease, background .2s ease;
+      font-size: 18px;
+      font-weight: bold;
+    }
+    
+    .zoom-btn:hover {
+      transform: scale(1.05);
+      background: rgba(0,0,0,.5);
+    }
+    
+    .zoom-btn:active {
+      transform: scale(.97);
+    }
 
     .controls{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;pointer-events:none}
     .btn{pointer-events:auto;appearance:none;border:0;background:rgba(0,0,0,.35);color:#fff;width:44px;height:44px;border-radius:999px;margin:0 10px;display:grid;place-items:center;cursor:pointer;backdrop-filter:saturate(120%) blur(4px);transition:transform .15s ease, background .2s ease;}
@@ -49,6 +87,11 @@
         <div class="layer"><img id="imgB" class="viewer" alt="" loading="eager"></div>
       </div>
       <div class="caption" id="caption"></div>
+      <div class="zoom-controls">
+        <button class="zoom-btn" id="zoomIn" aria-label="放大" title="放大 (+)">+</button>
+        <button class="zoom-btn" id="zoomOut" aria-label="缩小" title="缩小 (-)">−</button>
+        <button class="zoom-btn" id="resetZoom" aria-label="重置缩放" title="重置缩放 (0)">↺</button>
+      </div>
       <div class="controls">
         <button class="btn" id="prev" aria-label="上一张" title="上一张 (←)">⟨</button>
         <button class="btn" id="next" aria-label="下一张" title="下一张 (→)">⟩</button>
@@ -87,6 +130,9 @@
   const dotsEl = $('#dots');
   const btnPrev = $('#prev');
   const btnNext = $('#next');
+  const zoomInBtn = $('#zoomIn');
+  const zoomOutBtn = $('#zoomOut');
+  const resetZoomBtn = $('#resetZoom');
 
   const layerA = $('#imgA').closest('.layer');
   const layerB = $('#imgB').closest('.layer');
@@ -97,6 +143,12 @@
   let index = 0;
   let activeLayer = 'A';
   let timer = null;
+  
+  // 缩放相关变量
+  let scale = 1;
+  let currentScale = 1;
+  let startX, startY, startDistance;
+  let isPinching = false;
 
   init();
 
@@ -196,6 +248,9 @@
 
     setMeta();
     preload((i+1)%imgs.length);
+    
+    // 重置缩放
+    resetZoom();
   }
 
   function go(i){
@@ -209,32 +264,106 @@
   const next = () => go(index+1);
   const prev = () => go(index-1);
 
+  // 缩放功能函数
+  function applyZoom(imgElement) {
+    imgElement.style.transform = `scale(${currentScale})`;
+  }
+  
+  function zoomIn() {
+    currentScale *= 1.2;
+    currentScale = Math.min(currentScale, 5); // 最大放大5倍
+    const currentImg = activeLayer === 'A' ? imgA : imgB;
+    applyZoom(currentImg);
+  }
+  
+  function zoomOut() {
+    currentScale *= 0.8;
+    currentScale = Math.max(currentScale, 0.5); // 最小缩小到0.5倍
+    const currentImg = activeLayer === 'A' ? imgA : imgB;
+    applyZoom(currentImg);
+  }
+  
+  function resetZoom() {
+    currentScale = 1;
+    const currentImg = activeLayer === 'A' ? imgA : imgB;
+    applyZoom(currentImg);
+  }
+  
+  function getDistance(touch1, touch2) {
+    const dx = touch1.clientX - touch2.clientX;
+    const dy = touch1.clientY - touch2.clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
   function bindEvents(){
     btnNext.addEventListener('click', next);
     btnPrev.addEventListener('click', prev);
+    zoomInBtn.addEventListener('click', zoomIn);
+    zoomOutBtn.addEventListener('click', zoomOut);
+    resetZoomBtn.addEventListener('click', resetZoom);
 
     // 键盘
     window.addEventListener('keydown', e => {
       if (e.key === 'ArrowRight') next();
       if (e.key === 'ArrowLeft') prev();
+      if (e.key === '+' || e.key === '=') zoomIn();
+      if (e.key === '-' || e.key === '_') zoomOut();
+      if (e.key === '0') resetZoom();
     });
+
+    // 鼠标滚轮缩放
+    stage.addEventListener('wheel', e => {
+      e.preventDefault();
+      if (e.deltaY < 0) {
+        zoomIn();
+      } else {
+        zoomOut();
+      }
+    }, { passive: false });
 
     // 触摸滑动
     let x0 = null, y0 = null, t0 = 0;
     const THRESH = 40; // 需要滑动的阈值
+    
+    // 双指缩放
     stage.addEventListener('touchstart', e => {
-      const t = e.changedTouches[0];
-      x0 = t.clientX; y0 = t.clientY; t0 = Date.now();
-    }, {passive:true});
-    stage.addEventListener('touchend', e => {
-      const t = e.changedTouches[0];
-      const dx = t.clientX - x0; const dy = Math.abs(t.clientY - y0);
-      const dt = Date.now() - t0;
-      // 横向滑动，且距离足够，且耗时不是特别长
-      if (Math.abs(dx) > THRESH && dy < 80 && dt < 800){
-        dx < 0 ? next() : prev();
+      if (e.touches.length === 2) {
+        isPinching = true;
+        startDistance = getDistance(e.touches[0], e.touches[1]);
+        e.preventDefault();
+      } else {
+        const t = e.changedTouches[0];
+        x0 = t.clientX; y0 = t.clientY; t0 = Date.now();
       }
-    }, {passive:true});
+    }, { passive: false });
+    
+    stage.addEventListener('touchmove', e => {
+      if (isPinching && e.touches.length === 2) {
+        const currentDistance = getDistance(e.touches[0], e.touches[1]);
+        const scaleChange = currentDistance / startDistance;
+        
+        // 应用缩放变化
+        currentScale = Math.min(Math.max(scale * scaleChange, 0.5), 5);
+        const currentImg = activeLayer === 'A' ? imgA : imgB;
+        applyZoom(currentImg);
+        e.preventDefault();
+      }
+    }, { passive: false });
+    
+    stage.addEventListener('touchend', e => {
+      if (isPinching) {
+        isPinching = false;
+        scale = currentScale; // 保存当前缩放级别
+      } else {
+        const t = e.changedTouches[0];
+        const dx = t.clientX - x0; const dy = Math.abs(t.clientY - y0);
+        const dt = Date.now() - t0;
+        // 横向滑动，且距离足够，且耗时不是特别长
+        if (Math.abs(dx) > THRESH && dy < 80 && dt < 800){
+          dx < 0 ? next() : prev();
+        }
+      }
+    }, { passive: true });
 
     // 防止长按选中文字/图片
     stage.addEventListener('mousedown', e => e.preventDefault());
@@ -249,6 +378,3 @@
   </script>
 </body>
 </html>
-
-
-
